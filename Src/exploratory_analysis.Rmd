@@ -1,0 +1,262 @@
+```{r load_library}
+library(ggplot2)
+library(dplyr)
+```
+
+```{r custom_function}
+# Multiple plot function
+#
+# ggplot objects can be passed in ..., or to plotlist (as a list of ggplot objects)
+# - cols:   Number of columns in layout
+# - layout: A matrix specifying the layout. If present, 'cols' is ignored.
+#
+# If the layout is something like matrix(c(1,2,3,3), nrow=2, byrow=TRUE),
+# then plot 1 will go in the upper left, 2 will go in the upper right, and
+# 3 will go all the way across the bottom.
+#
+multiplot <- function(..., plotlist=NULL, file, cols=1, layout=NULL) {
+	library(grid)
+	
+	# Make a list from the ... arguments and plotlist
+	plots <- c(list(...), plotlist)
+	
+	numPlots = length(plots)
+	
+	# If layout is NULL, then use 'cols' to determine layout
+	if (is.null(layout)) {
+		# Make the panel
+		# ncol: Number of columns of plots
+		# nrow: Number of rows needed, calculated from # of cols
+		layout <- matrix(seq(1, cols * ceiling(numPlots/cols)),
+				 ncol = cols, nrow = ceiling(numPlots/cols))
+	}
+	
+	if (numPlots==1) {
+		print(plots[[1]]) 
+	} else {
+		# Set up the page
+		grid.newpage()
+		pushViewport(viewport(layout = grid.layout(nrow(layout), ncol(layout))))
+		
+		# Make each plot, in the correct location
+		for (i in 1:numPlots) {
+			# Get the i,j matrix positions of the regions that contain this subplot
+			matchidx <- as.data.frame(which(layout == i, arr.ind = TRUE))
+			
+			print(plots[[i]], vp = viewport(layout.pos.row = matchidx$row,
+							 layout.pos.col = matchidx$col))
+		}
+	}
+}
+#######################################################################################
+printMultiPlot <- function(..., file_name = "plot.jpeg", path_dir = "./", is_save = FALSE , plotlist = NULL, cols = 1, layout = NULL) {
+	if (is_save) {
+		jpeg(paste(path_dir, file_name))
+	}
+
+	multiplot(..., plotlist = plotlist, cols = cols, layout = layout)
+
+	if (is_save) {
+		dev.off()
+	}
+}
+#######################################################################################
+printPlot <- function(p, file_name = "plot.jpeg", path_dir = "./", is_save = FALSE ){
+	if (is_save) {
+		jpeg(paste(path_dir, file_name))
+	}
+
+	print(p)
+
+	if (is_save) {
+		dev.off()
+	}
+}
+#######################################################################################
+convertToPOSIXlt <- function(date_time){
+	return(as.POSIXlt(as.character(date_time), format="%Y-%m-%dT%H:%M:%SZ"))
+}
+#######################################################################################
+convertToPOSIXct <- function(date_time){
+	return(as.POSIXct(as.character(date_time), format="%Y-%m-%dT%H:%M:%SZ"))
+}
+#######################################################################################
+```
+
+```{r set_variables}
+path_dataset = "../Data/medical_no_shows.csv"
+path_plot_dir = "../Plots/ExploratoryAnalysis/"
+is_save = TRUE;
+```
+
+```{r create_plot_dir}
+dir.create(path_plot_dir, showWarnings=FALSE)
+```
+
+```{r read_dataset}
+dataset_original = read.csv(path_dataset)
+```
+
+```{r transform_dataset}
+reference_dataset_original = list()
+reference_dataset_original$ScheduledDay = convertToPOSIXlt(dataset_original$ScheduledDay)
+reference_dataset_original$AppointmentDay = convertToPOSIXlt(dataset_original$AppointmentDay)
+
+dataset_original$ScheduledDay_year = reference_dataset_original$ScheduledDay$year
+dataset_original$ScheduledDay_mon  = reference_dataset_original$ScheduledDay$mon
+dataset_original$ScheduledDay_mday = reference_dataset_original$ScheduledDay$mday
+
+dataset_original$ScheduledDay_hour = reference_dataset_original$ScheduledDay$hour
+dataset_original$ScheduledDay_min  = reference_dataset_original$ScheduledDay$min
+dataset_original$ScheduledDay_sec  = reference_dataset_original$ScheduledDay$sec
+
+dataset_original$ScheduledDay_wday = reference_dataset_original$ScheduledDay$wday
+dataset_original$ScheduledDay_yday = reference_dataset_original$ScheduledDay$yday
+
+dataset_original$AppointmentDay_year = reference_dataset_original$AppointmentDay$year
+dataset_original$AppointmentDay_mon  = reference_dataset_original$AppointmentDay$mon
+dataset_original$AppointmentDay_mday = reference_dataset_original$AppointmentDay$mday
+
+dataset_original$AppointmentDay_hour = reference_dataset_original$AppointmentDay$hour
+dataset_original$AppointmentDay_min  = reference_dataset_original$AppointmentDay$min
+dataset_original$AppointmentDay_sec  = reference_dataset_original$AppointmentDay$sec
+
+dataset_original$AppointmentDay_wday = reference_dataset_original$AppointmentDay$wday
+dataset_original$AppointmentDay_yday = reference_dataset_original$AppointmentDay$yday
+
+dataset_original$ScheduledDay = as.Date(dataset_original$ScheduledDay, format = "%Y-%m-%dT%H:%M:%SZ")
+dataset_original$AppointmentDay = as.Date(dataset_original$AppointmentDay, format = "%Y-%m-%dT%H:%M:%SZ")
+dataset_original$DistanceAppointmentDate = dataset_original$AppointmentDay - dataset_original$ScheduledDay
+rm(reference_dataset_original)
+```
+
+```{r summary_data}
+print(summary(dataset_original))
+```
+
+```{r plot_show_no_show_ratio}
+p <- ggplot(dataset_original) +
+	geom_bar(aes(x = No.show , fill = No.show), stat = "count") +
+	labs(title="Number of Show/No Show Appointment", y = "Count")
+printPlot(p, "show_no_show_ratio.jpeg", path_plot_dir, is_save)
+rm(p)
+```
+
+```{r plot_distribution_age}
+mean_age = mean(dataset_original$Age)
+quantiles_age = quantile(dataset_original$Age)
+lower_quantile_age = quantiles_age[2]
+upper_quantile_age = quantiles_age[4]
+p <- ggplot(dataset_original) +
+	geom_histogram(aes(x = Age, y = ..density..), fill = "blue", color = "lightblue", stat = "bin", binwidth = 1) +
+	geom_density(aes(x = Age), fill = "red", alpha = 0.3, color = "red",  stat = "density") +
+	geom_vline(aes(xintercept=mean_age), color = "black") +
+	geom_vline(aes(xintercept=lower_quantile_age), color = "green", linetype = "dashed") +
+	geom_vline(aes(xintercept=upper_quantile_age), color = "green", linetype = "dashed") +
+	geom_text(aes(x = mean_age, y = 0.03, label=paste("Mean=", as.integer(mean_age))), nudge_x = -1, color = "black", angle = 90, size=4) +
+	geom_text(aes(x = lower_quantile_age, y = 0.03, label=paste("Lower Quartile=", as.integer(lower_quantile_age))), nudge_x = -1, color = "black", angle = 90, size=4) +
+	geom_text(aes(x = upper_quantile_age, y = 0.03, label=paste("Upper Quartile", as.integer(upper_quantile_age))), nudge_x = -1, color = "black", angle = 90, size=4) +
+	labs(title = "Distribution of Age", x = "Age", y = "Probability")
+printPlot(p, "distribution_age.jpeg", path_plot_dir, is_save)
+rm(mean_age, quantiles_age, lower_quantile_age, upper_quantile_age, p)
+```
+
+```{r plot_percentages}
+title_size = 5
+
+p = list()
+p[[1]] <- ggplot(dataset_original) +
+	geom_bar(aes(x = Gender, fill = Gender), stat = "count") +
+	labs(title = "Gender Count", x = "Gender", y = "Count") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(Gender) %>% count()
+tmp_dataset = dataset_original %>% group_by(Gender, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$Gender == Gender)])
+p[[2]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = Gender, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per gender", x = "Gender", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+p[[3]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = No.show, y = n , fill = Gender), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of gender per Show/No Show", x = "Show/No Show", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(Scholarship) %>% count()
+tmp_dataset = dataset_original %>% group_by(Scholarship, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$Scholarship == Scholarship)])
+p[[4]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = Scholarship, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per Scholarship", x = "Scholarship", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(Hipertension) %>% count()
+tmp_dataset = dataset_original %>% group_by(Hipertension, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$Hipertension == Hipertension)])
+p[[5]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = Hipertension, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per Hipertension", x = "Hipertension", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(Diabetes) %>% count()
+tmp_dataset = dataset_original %>% group_by(Diabetes, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$Diabetes == Diabetes)])
+p[[6]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = Diabetes, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per Diabetes", x = "Diabetes", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(Alcoholism) %>% count()
+tmp_dataset = dataset_original %>% group_by(Alcoholism, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$Alcoholism == Alcoholism)])
+p[[7]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = Alcoholism, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per Alcoholism", x = "Alcoholism", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(Handcap) %>% count()
+tmp_dataset = dataset_original %>% group_by(Handcap, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$Handcap == Handcap)])
+p[[8]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = Handcap, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per Handcap", x = "Handcap", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+total_per_category = dataset_original %>% group_by(SMS_received) %>% count()
+tmp_dataset = dataset_original %>% group_by(SMS_received, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$SMS_received == SMS_received)])
+p[[9]] <- ggplot(tmp_dataset) +
+	geom_bar(aes(x = SMS_received, y = n , fill = No.show), position = "fill" , stat = "identity") +
+	labs(title = "Percentage of Show/No Show per SMS received", x = "SMS received", y = "Percentage") +
+	theme(plot.title = element_text(size = title_size))
+
+printMultiPlot(p[[1]], p[[4]], p[[7]],
+	       p[[2]], p[[5]], p[[8]],
+	       p[[3]], p[[6]], p[[9]],
+	       file_name = "percentages_and_ratio.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 3)
+rm(title_size, total_per_category, tmp_dataset, p)
+```
+
+```{r plot_appointment_series}
+p = list()
+p[[1]] <- dataset_original %>% group_by(ScheduledDay) %>% count() %>% ggplot() +
+	geom_line(aes(x = ScheduledDay, y = n), color = "blue") +
+	geom_point(aes(x = ScheduledDay, y = n), color = "blue") +
+	scale_x_date(date_breaks = "1 month") +
+	labs(title = "Number of Appointmet Scheduled", x = "Date Scheduled", y = "Number of Appointment Scheduled")
+
+p[[2]] <- dataset_original %>% group_by(AppointmentDay) %>% count() %>% ggplot() +
+	geom_line(aes(x = AppointmentDay, y = n), color = "red") +
+	geom_point(aes(x = AppointmentDay, y = n), color = "red") +
+	scale_x_date(date_breaks = "2 weeks") +
+	labs(title = "Number of Appointmet", x = "Date Appointment", y = "Number of Appointment")
+
+printMultiPlot(p[[1]], p[[2]],
+	       file_name = "appointment_series.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 1)
+rm(p)
+```
+
+```{r plot_number_of_appointment_per_distance}
+p <- dataset_original %>% group_by(DistanceAppointmentDate) %>% count() %>% ggplot() +
+	geom_bar(aes(x = as.numeric(DistanceAppointmentDate), y = n), fill = "blue", color = "lightblue", stat = "identity") +
+	labs(title = "Number of appointment per Distance Date", x = "Distance Date in Days", y = "Number of Appointment")
+printPlot(p, "number_of_appointment_per_distance.jpeg", path_plot_dir, is_save)
+
+rm(p)
+```
