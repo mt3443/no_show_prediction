@@ -85,6 +85,9 @@ convertToPOSIXct <- function(date_time){
 
 ```{r set_variables}
 path_dataset = "../Data/medical_no_shows.csv"
+path_processed_dataset = "../Data/processed_medical_no_shows.csv"
+path_holiday_2015 = "../Data/public_holidays_2015.csv"
+path_holiday_2016 = "../Data/public_holidays_2016.csv"
 path_plot_dir = "../Plots/ExploratoryAnalysis/"
 is_save = TRUE;
 ```
@@ -95,51 +98,64 @@ dir.create(path_plot_dir, showWarnings=FALSE)
 
 ```{r read_dataset}
 dataset_original = read.csv(path_dataset)
+holiday_2015 = read.csv(path_holiday_2015)
+holiday_2016 = read.csv(path_holiday_2016)
 ```
 
 ```{r transform_dataset}
+holiday_2015$Date = as.Date(paste("2015", as.character(holiday_2015$Date), sep =" "), format = "%Y %b %d")
+holiday_2016$Date = as.Date(paste("2016", as.character(holiday_2016$Date), sep =" "), format = "%Y %b %d")
+holiday = rbind(holiday_2015, holiday_2016)
+
 reference_dataset_original = list()
 reference_dataset_original$ScheduledDay = convertToPOSIXlt(dataset_original$ScheduledDay)
 reference_dataset_original$AppointmentDay = convertToPOSIXlt(dataset_original$AppointmentDay)
 
-dataset_original$ScheduledDay_year = reference_dataset_original$ScheduledDay$year
-dataset_original$ScheduledDay_mon  = reference_dataset_original$ScheduledDay$mon
+dataset_original$ScheduledDay_year = reference_dataset_original$ScheduledDay$year + 1900
+dataset_original$ScheduledDay_mon  = reference_dataset_original$ScheduledDay$mon + 1
 dataset_original$ScheduledDay_mday = reference_dataset_original$ScheduledDay$mday
 
 dataset_original$ScheduledDay_hour = reference_dataset_original$ScheduledDay$hour
 dataset_original$ScheduledDay_min  = reference_dataset_original$ScheduledDay$min
 dataset_original$ScheduledDay_sec  = reference_dataset_original$ScheduledDay$sec
 
-dataset_original$ScheduledDay_wday = reference_dataset_original$ScheduledDay$wday
-dataset_original$ScheduledDay_yday = reference_dataset_original$ScheduledDay$yday
+dataset_original$ScheduledDay_wday = reference_dataset_original$ScheduledDay$wday + 1
+dataset_original$ScheduledDay_yday = reference_dataset_original$ScheduledDay$yday + 1
 
-dataset_original$AppointmentDay_year = reference_dataset_original$AppointmentDay$year
-dataset_original$AppointmentDay_mon  = reference_dataset_original$AppointmentDay$mon
+dataset_original$AppointmentDay_year = reference_dataset_original$AppointmentDay$year + 1900
+dataset_original$AppointmentDay_mon  = reference_dataset_original$AppointmentDay$mon + 1
 dataset_original$AppointmentDay_mday = reference_dataset_original$AppointmentDay$mday
 
 dataset_original$AppointmentDay_hour = reference_dataset_original$AppointmentDay$hour
 dataset_original$AppointmentDay_min  = reference_dataset_original$AppointmentDay$min
 dataset_original$AppointmentDay_sec  = reference_dataset_original$AppointmentDay$sec
 
-dataset_original$AppointmentDay_wday = reference_dataset_original$AppointmentDay$wday
-dataset_original$AppointmentDay_yday = reference_dataset_original$AppointmentDay$yday
+dataset_original$AppointmentDay_wday = reference_dataset_original$AppointmentDay$wday + 1
+dataset_original$AppointmentDay_yday = reference_dataset_original$AppointmentDay$yday + 1
 
 dataset_original$ScheduledDay = as.Date(dataset_original$ScheduledDay, format = "%Y-%m-%dT%H:%M:%SZ")
 dataset_original$AppointmentDay = as.Date(dataset_original$AppointmentDay, format = "%Y-%m-%dT%H:%M:%SZ")
 dataset_original$DistanceAppointmentDate = dataset_original$AppointmentDay - dataset_original$ScheduledDay
-rm(reference_dataset_original)
+
+total_per_patient_no_show = dataset_original %>% group_by(PatientId, No.show) %>% count()
+probability_no_show_per_patient = dataset_original %>% group_by(PatientId) %>% count() %>% mutate(probability_no_show = ifelse(((total_per_patient_no_show$PatientId == PatientId) && (total_per_patient_no_show$No.show == "No")), total_per_patient_no_show$n[which((total_per_patient_no_show$PatientId == PatientId) && (total_per_patient_no_show$No.show == "No"))]/n, 0))
+dataset_original$ProbabilityPatientPast = probability_no_show_per_patient[match(dataset_original$PatientId, probability_no_show_per_patient$PatientId), ]$probability_no_show
+
+dataset_original$DistanceToHoliday = sapply(dataset_original$AppointmentDay, function(x, holiday){ifelse(min(abs(x - holiday)) <= 7, min(abs(x - holiday)), -1)}, unique(holiday$Date))
+rm(reference_dataset_original, total_per_patient_no_show, probability_no_show_per_patient, holiday_2015, holiday_2016, holiday)
+```
+
+```{r clean_dataset}
+dataset_original = dataset_original[which(dataset_original$Age >=0), ]
+dataset_original = dataset_original[which(dataset_original$DistanceAppointmentDate >= 0), ]
+```
+
+```{r save_processed_dataset}
+write.csv(dataset_original, path_processed_dataset)
 ```
 
 ```{r summary_data}
 print(summary(dataset_original))
-```
-
-```{r plot_show_no_show_ratio}
-p <- ggplot(dataset_original) +
-	geom_bar(aes(x = No.show , fill = No.show), stat = "count") +
-	labs(title="Number of Show/No Show Appointment", y = "Count")
-printPlot(p, "show_no_show_ratio.jpeg", path_plot_dir, is_save)
-rm(p)
 ```
 
 ```{r plot_distribution_age}
@@ -159,6 +175,14 @@ p <- ggplot(dataset_original) +
 	labs(title = "Distribution of Age", x = "Age", y = "Probability")
 printPlot(p, "distribution_age.jpeg", path_plot_dir, is_save)
 rm(mean_age, quantiles_age, lower_quantile_age, upper_quantile_age, p)
+```
+
+```{r plot_show_no_show_ratio}
+p <- ggplot(dataset_original) +
+	geom_bar(aes(x = No.show , fill = No.show), stat = "count") +
+	labs(title="Number of Show/No Show Appointment", y = "Count")
+printPlot(p, "show_no_show_ratio.jpeg", path_plot_dir, is_save)
+rm(p)
 ```
 
 ```{r plot_percentages}
@@ -253,10 +277,249 @@ rm(p)
 ```
 
 ```{r plot_number_of_appointment_per_distance}
-p <- dataset_original %>% group_by(DistanceAppointmentDate) %>% count() %>% ggplot() +
-	geom_bar(aes(x = as.numeric(DistanceAppointmentDate), y = n), fill = "blue", color = "lightblue", stat = "identity") +
+p = list()
+p[[1]] <- dataset_original %>% group_by(DistanceAppointmentDate, No.show) %>% count() %>% ggplot() +
+	geom_bar(aes(x = as.numeric(DistanceAppointmentDate), y = n, fill = No.show), color = "lightblue", stat = "identity") +
 	labs(title = "Number of appointment per Distance Date", x = "Distance Date in Days", y = "Number of Appointment")
-printPlot(p, "number_of_appointment_per_distance.jpeg", path_plot_dir, is_save)
+p[[2]] <- dataset_original %>% filter(DistanceAppointmentDate > 0, DistanceAppointmentDate <= 30) %>% group_by(DistanceAppointmentDate, No.show) %>% count() %>% ggplot() +
+	geom_bar(aes(x = as.numeric(DistanceAppointmentDate), y = n, fill = No.show), position = "dodge", color = "lightblue", stat = "identity") +
+	labs(title = "Number of appointment per Distance Date (Filtered 1 < Days < 30)", x = "Distance Date in Days", y = "Number of Appointment")
+printMultiPlot(p[[1]],
+	       p[[2]],
+	       file_name = "number_of_appointment_per_distance.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 1)
 
+rm(p)
+```
+
+```{r plot_ratio_per_distance}
+p = list()
+total_per_distance = dataset_original %>% group_by(DistanceAppointmentDate) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(DistanceAppointmentDate, No.show) %>% count() %>% mutate(percentage = n / total_per_distance$n[which(total_per_distance$DistanceAppointmentDate == DistanceAppointmentDate)])
+p[[1]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = as.numeric(DistanceAppointmentDate), y = percentage), color = "blue") +
+	labs(title = "Ratio by Distance to Appointment Date", x = "Distance (Days)", y = "Ratio of Show/No Show")
+
+total_per_distance = dataset_original %>% group_by(DistanceToHoliday) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(DistanceToHoliday, No.show) %>% count() %>% mutate(percentage = n / total_per_distance$n[which(total_per_distance$DistanceToHoliday == DistanceToHoliday)])
+p[[2]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = as.numeric(DistanceToHoliday), y = percentage), color = "blue") +
+	labs(title = "Ratio by Distance to Holiday", x = "Distance (Days)", y = "Ratio of Show/No Show")
+printMultiPlot(p[[1]], p[[2]],
+	       file_name = "ratio_per_distance.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 1)
+
+rm(total_per_distance, tmp_dataset, p)
+```
+
+```{r plot_appointment_ratio_series}
+p = list()
+total_per_date = dataset_original %>% group_by(ScheduledDay) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(ScheduledDay, No.show) %>% count() %>% mutate(percentage = n / total_per_date$n[which(total_per_date$ScheduledDay == ScheduledDay)])
+p[[1]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = ScheduledDay, y = percentage), color = "blue") +
+	scale_x_date(date_breaks = "1 month") +
+	labs(title = "Ratio Number of Appointmet Scheduled", x = "Date Scheduled", y = "Ratio of Show/No Show")
+
+total_per_date = dataset_original %>% group_by(AppointmentDay) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(AppointmentDay, No.show) %>% count() %>% mutate(percentage = n / total_per_date$n[which(total_per_date$AppointmentDay == AppointmentDay)])
+p[[2]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = AppointmentDay, y = percentage), color = "red") +
+	scale_x_date(date_breaks = "2 weeks") +
+	labs(title = "Ratio Number of Appointmet", x = "Date Appointment", y = "Ratio of Show/No Show")
+
+printMultiPlot(p[[1]], p[[2]],
+	       file_name = "appointment_ratio_series.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 1)
+rm(total_per_date, tmp_dataset, p)
+```
+
+```{r plot_ratio_age}
+total_per_age = dataset_original %>% group_by(Age) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(Age, No.show) %>% count() %>% mutate(percentage = n / total_per_age$n[which(total_per_age$Age == Age)])
+p <- ggplot(tmp_dataset) +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "Ratio by Age", x = "Age", y = "Ratio of Show/No Show")
+printPlot(p, "ratio_age.jpeg", path_plot_dir, is_save)
+
+rm(total_per_age, tmp_dataset, p)
+```
+
+```{r plot_per_wday}
+p = list()
+total_per_category = dataset_original %>% group_by(ScheduledDay_wday) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(ScheduledDay_wday, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$ScheduledDay_wday == ScheduledDay_wday)])
+p[[1]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = ScheduledDay_wday, y = percentage), color = "blue") +
+	geom_line(aes(x = ScheduledDay_wday, y = percentage), color = "blue") +
+	labs(title = "Ratio of Scheduled Day by Week Day", x = "Week Day (0 - 6)", y = "Ratio of Show/No Show")
+
+p[[2]] <- dataset_original %>% group_by(ScheduledDay_wday) %>% count() %>% ggplot() +
+	geom_bar(aes(x = ScheduledDay_wday, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Scheduled Day by Week Day", x = "Week Day (0 - 6)", y = "Number of Appointment")
+
+total_per_category = dataset_original %>% group_by(AppointmentDay_wday) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(AppointmentDay_wday, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$AppointmentDay_wday == AppointmentDay_wday)])
+p[[3]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = AppointmentDay_wday, y = percentage), color = "blue") +
+	geom_line(aes(x = AppointmentDay_wday, y = percentage), color = "blue") +
+	labs(title = "Ratio of Appointment Day by Week Day", x = "Week Day (0 - 6)", y = "Ratio of Show/No Show")
+
+p[[4]] <- dataset_original %>% group_by(AppointmentDay_wday) %>% count() %>% ggplot() +
+	geom_bar(aes(x = AppointmentDay_wday, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Appointment Day Appointment by Week Day", x = "Week Day (0 - 6)", y = "Number of Appointment")
+printMultiPlot(p[[1]], p[[2]],
+	       p[[3]], p[[4]],
+	       file_name = "per_wday.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 2)
+
+rm(total_per_category, tmp_dataset, p)
+```
+
+```{r plot_per_mday}
+p = list()
+total_per_category = dataset_original %>% group_by(ScheduledDay_mday) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(ScheduledDay_mday, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$ScheduledDay_mday == ScheduledDay_mday)])
+p[[1]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = ScheduledDay_mday, y = percentage), color = "blue") +
+	geom_line(aes(x = ScheduledDay_mday, y = percentage), color = "blue") +
+	labs(title = "Ratio of Scheduled Day by Month Day", x = "Month Day (1 - 31)", y = "Ratio of Show/No Show")
+
+p[[2]] <- dataset_original %>% group_by(ScheduledDay_mday) %>% count() %>% ggplot() +
+	geom_bar(aes(x = ScheduledDay_mday, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Scheduled Day by Month Day", x = "Month Day (1 - 31)", y = "Number of Appointment")
+
+total_per_category = dataset_original %>% group_by(AppointmentDay_mday) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(AppointmentDay_mday, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$AppointmentDay_mday == AppointmentDay_mday)])
+p[[3]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = AppointmentDay_mday, y = percentage), color = "blue") +
+	geom_line(aes(x = AppointmentDay_mday, y = percentage), color = "blue") +
+	labs(title = "Ratio of Appointment Day by Month Day", x = "Month Day (1 - 31)", y = "Ratio of Show/No Show")
+
+p[[4]] <- dataset_original %>% group_by(AppointmentDay_mday) %>% count() %>% ggplot() +
+	geom_bar(aes(x = AppointmentDay_mday, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Appointment Day Appointment by Month Day", x = "Month Day (1 - 31)", y = "Number of Appointment")
+printMultiPlot(p[[1]], p[[2]],
+	       p[[3]], p[[4]],
+	       file_name = "per_mday.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 2)
+
+rm(total_per_category, tmp_dataset, p)
+```
+
+```{r plot_per_mon}
+p = list()
+total_per_category = dataset_original %>% group_by(ScheduledDay_mon) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(ScheduledDay_mon, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$ScheduledDay_mon == ScheduledDay_mon)])
+p[[1]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = ScheduledDay_mon, y = percentage), color = "blue") +
+	geom_line(aes(x = ScheduledDay_mon, y = percentage), color = "blue") +
+	labs(title = "Ratio of Scheduled Day by Month", x = "Month (0 - 11)", y = "Ratio of Show/No Show")
+
+p[[2]] <- dataset_original %>% group_by(ScheduledDay_mon) %>% count() %>% ggplot() +
+	geom_bar(aes(x = ScheduledDay_mon, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Scheduled Day by Month", x = "Month (0 - 11)", y = "Number of Appointment")
+
+total_per_category = dataset_original %>% group_by(AppointmentDay_mon) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(AppointmentDay_mon, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$AppointmentDay_mon == AppointmentDay_mon)])
+p[[3]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = AppointmentDay_mon, y = percentage), color = "blue") +
+	geom_line(aes(x = AppointmentDay_mon, y = percentage), color = "blue") +
+	labs(title = "Ratio of Appointment Day by Month", x = "Month (0 - 11)", y = "Ratio of Show/No Show")
+
+p[[4]] <- dataset_original %>% group_by(AppointmentDay_mon) %>% count() %>% ggplot() +
+	geom_bar(aes(x = AppointmentDay_mon, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Appointment Day Appointment by Month", x = "Month (0 - 11)", y = "Number of Appointment")
+printMultiPlot(p[[1]], p[[2]],
+	       p[[3]], p[[4]],
+	       file_name = "per_mon.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 2)
+
+rm(total_per_category, tmp_dataset, p)
+```
+
+```{r plot_per_hour}
+p = list()
+total_per_category = dataset_original %>% group_by(ScheduledDay_hour) %>% count()
+tmp_dataset = dataset_original %>% filter(No.show == "No") %>% group_by(ScheduledDay_hour, No.show) %>% count() %>% mutate(percentage = n / total_per_category$n[which(total_per_category$ScheduledDay_hour == ScheduledDay_hour)])
+p[[1]] <- ggplot(tmp_dataset) +
+	geom_point(aes(x = ScheduledDay_hour, y = percentage), color = "blue") +
+	geom_line(aes(x = ScheduledDay_hour, y = percentage), color = "blue") +
+	labs(title = "Ratio of Scheduled Day by Hour", x = "Hour (0 - 23)", y = "Ratio of Show/No Show")
+
+p[[2]] <- dataset_original %>% group_by(ScheduledDay_hour) %>% count() %>% ggplot() +
+	geom_bar(aes(x = ScheduledDay_hour, y = n), fill = "blue", stat = "identity") +
+	labs(title = "Number of Scheduled Day by Hour", x = "Hour (0 - 23)", y = "Number of Appointment")
+
+printMultiPlot(p[[1]], p[[2]],
+	       file_name = "per_hour.jpeg", path_dir = path_plot_dir, is_save = is_save,
+	       cols = 1)
+
+rm(total_per_category, tmp_dataset, p)
+```
+
+```{r plot_Scholarship_per_age}
+p <- dataset_original %>% group_by(Age, Scholarship) %>% count() %>% group_by(Age) %>% summarise(percentage = sum(ifelse(Scholarship == 1, n[which(Scholarship == 1)], 0)) / sum(n)) %>% ggplot() +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "Scholarship Ratio per Age", x = "Age", y = "Ratio")
+printPlot(p, file_name = "Scholarship_per_age.jpeg", path_dir = path_plot_dir, is_save = is_save)
+rm(p)
+```
+
+```{r plot_Hipertension_per_age}
+p <- dataset_original %>% group_by(Age, Hipertension) %>% count() %>% group_by(Age) %>% summarise(percentage = sum(ifelse(Hipertension == 1, n[which(Hipertension == 1)], 0)) / sum(n)) %>% ggplot() +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "Hipertension Ratio per Age", x = "Age", y = "Ratio")
+printPlot(p, file_name = "Hipertension_per_age.jpeg", path_dir = path_plot_dir, is_save = is_save)
+rm(p)
+```
+
+```{r plot_Diabetes_per_age}
+p <- dataset_original %>% group_by(Age, Diabetes) %>% count() %>% group_by(Age) %>% summarise(percentage = sum(ifelse(Diabetes == 1, n[which(Diabetes == 1)], 0)) / sum(n)) %>% ggplot() +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "Diabetes Ratio per Age", x = "Age", y = "Ratio")
+printPlot(p, file_name = "Diabetes_per_age.jpeg", path_dir = path_plot_dir, is_save = is_save)
+rm(p)
+```
+
+```{r plot_Alcoholism_per_age}
+p <- dataset_original %>% group_by(Age, Alcoholism) %>% count() %>% group_by(Age) %>% summarise(percentage = sum(ifelse(Alcoholism == 1, n[which(Alcoholism == 1)], 0)) / sum(n)) %>% ggplot() +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "Alcoholism Ratio per Age", x = "Age", y = "Ratio")
+printPlot(p, file_name = "Alcoholism_per_age.jpeg", path_dir = path_plot_dir, is_save = is_save)
+rm(p)
+```
+
+```{r plot_Handcap_per_age}
+p <- dataset_original %>% group_by(Age, Handcap) %>% count() %>% group_by(Age) %>% summarise(percentage = sum(ifelse(Handcap == 1, n[which(Handcap == 1)], 0)) / sum(n)) %>% ggplot() +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "Handcap Ratio per Age", x = "Age", y = "Ratio")
+printPlot(p, file_name = "Handcap_per_age.jpeg", path_dir = path_plot_dir, is_save = is_save)
+rm(p)
+```
+
+```{r plot_SMS_per_age}
+p <- dataset_original %>% group_by(Age, SMS_received) %>% count() %>% group_by(Age) %>% summarise(percentage = sum(ifelse(SMS_received == 1, n[which(SMS_received == 1)], 0)) / sum(n)) %>% ggplot() +
+	geom_point(aes(x = Age, y = percentage), color = "blue") +
+	labs(title = "SMS Received Ratio per Age", x = "Age", y = "Ratio")
+printPlot(p, file_name = "SMS_per_age.jpeg", path_dir = path_plot_dir, is_save = is_save)
+rm(p)
+```
+
+```{r plot_per_neighbourhood}
+p <- dataset_original %>% group_by(Neighbourhood, No.show) %>% count() %>% ggplot() +
+	geom_bar(aes(x = reorder(Neighbourhood, -n), y = n, fill = No.show), stat = "identity") +
+	theme(axis.text.x = element_blank()) +
+	labs(title = "Appointment per Neighbourhood", x = "Neighbourhood", y = "Number of Appointment")
+printPlot(p, "Appointment_per_neighbourhood.jpeg", path_plot_dir, is_save)
+rm(p)
+```
+
+```{r plot_ratio_per_neighbourhood}
+p <- dataset_original %>% group_by(Neighbourhood, No.show) %>% count() %>% group_by(Neighbourhood) %>% summarise(percentage = sum(ifelse(No.show == "No", n[which(No.show == "No")], 0)) / sum(n), n = sum(n)) %>% ggplot() +
+	geom_point(aes(x = reorder(Neighbourhood, -n), y = percentage), color = "blue") +
+	theme(axis.text.x = element_blank()) +
+	labs(title = "Ratio per Neighbourhood", x = "Neighbourhood", y = "Ratio Show/No Show")
+printPlot(p, "Ratio_per_neighbourhood.jpeg", path_plot_dir, is_save)
 rm(p)
 ```
